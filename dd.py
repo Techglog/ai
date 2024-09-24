@@ -2,6 +2,7 @@ import asyncio
 import speech_recognition as sr
 import pyttsx3
 import g4f
+import time
 
 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -43,33 +44,44 @@ def listen():
             speak("Sorry, my speech service is down.")
             return None
 
-def ask_g4f(question):
-    """Send a question to the assistant and return the response."""
+def ask_g4f(question, retries=3, delay=2):
+    """Send a question to the assistant with a retry mechanism."""
     global conversation_history
 
     # Add the user's question to the conversation history
     conversation_history.append({"role": "user", "content": question})
-    
-    # Make the request with the updated conversation history
-    response = g4f.ChatCompletion.create(
-        model="gpt-3.5-turbo",  # or another model supported by g4f
-        messages=conversation_history,
-    )
 
-    # Process and return the response
-    if isinstance(response, str):
-        return response.strip()
-    elif isinstance(response, dict) and 'choices' in response:
-        return response['choices'][0]['message']['content'].strip()
-    else:
-        return "Sorry, I didn't get a proper response."
+    # Retry mechanism
+    for attempt in range(retries):
+        try:
+            # Make the request with the updated conversation history
+            response = g4f.ChatCompletion.create(
+                model="gpt-3.5-turbo",  # or another model supported by g4f
+                messages=conversation_history,
+            )
+
+            # Process and return the response
+            if isinstance(response, str):
+                return response.strip()
+            elif isinstance(response, dict) and 'choices' in response:
+                return response['choices'][0]['message']['content'].strip()
+            else:
+                raise Exception("Invalid response format")
+        
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                return "Sorry, I couldn't get a proper response after several attempts."
 
 def main():
     """Main function to run the voice assistant."""
     global user_name, assistant_name, conversation_history
-    
+
     speak(f"Hello {user_name}, how can I help you today?")
-    
+
     while True:
         question = listen()
         if question:
@@ -77,12 +89,12 @@ def main():
                 user_name = question.split("to")[-1].strip()
                 speak(f"Okay, I'll call you {user_name} from now on.")
                 conversation_history.append({"role": "user", "content": f"My name is now {user_name}."})
-            
+
             elif f"change your name to" in question.lower():
                 assistant_name = question.split("to")[-1].strip()
                 speak(f"Okay, you can call me {assistant_name} from now on.")
                 conversation_history[0] = {"role": "system", "content": f"You are {assistant_name}, a helpful assistant."}
-            
+
             else:
                 response = ask_g4f(question)
                 print(f"{assistant_name} says: {response}")
